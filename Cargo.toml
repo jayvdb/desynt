@@ -5,3 +5,11 @@ edition = "2024"
 
 [dependencies]
 syn = { version = "2.0", features = ["full"] }
+phf = { version = "0.13", optional = true }
+
+[dev-dependencies]
+phf = { version = "0.13", features = ["macros"] }
+
+[features]
+default = ["static-resolver"]
+static-resolver = ["phf"]

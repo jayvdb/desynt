@@ -1,9 +1,9 @@
-use desynt::PathResolver;
+use desynt::DynamicPathResolver;
 use syn::{Path, parse_str};
 
 #[test]
 fn empty_resolver() {
-    let resolver = PathResolver::new();
+    let resolver = DynamicPathResolver::default();
     assert!(resolver.is_empty());
     assert_eq!(resolver.len(), 0);
 
@@ -13,66 +13,19 @@ fn empty_resolver() {
 
 #[test]
 fn basic_mapping() {
-    let mut resolver = PathResolver::new();
+    let mut resolver = DynamicPathResolver::default();
     resolver.add_mapping("std::string::String", "String");
 
     let path: Path = parse_str("std::string::String").unwrap();
     assert_eq!(resolver.resolve(&path), Some("String"));
-
-    assert!(!resolver.is_empty());
-    assert_eq!(resolver.len(), 1);
 }
 
 #[test]
-fn resolve_with_leading_colons() {
-    let mut resolver = PathResolver::new();
+fn multiple_mappings() {
+    let mut resolver = DynamicPathResolver::default();
     resolver.add_mapping("std::string::String", "String");
+    resolver.add_mapping("std::vec::Vec", "Vec");
 
-    let path: Path = parse_str("::std::string::String").unwrap();
-    assert_eq!(resolver.resolve(&path), Some("String"));
-}
-
-#[test]
-fn resolve_with_raw_identifiers() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("std::string::String", "String");
-
-    let path: Path = parse_str("::r#std::r#string::String").unwrap();
-    assert_eq!(resolver.resolve(&path), Some("String"));
-}
-
-#[test]
-fn multiple_mappings_same_canonical() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("std::primitive::f64", "f64");
-    resolver.add_mapping("core::primitive::f64", "f64");
-    resolver.add_mapping("f64", "f64");
-
-    let std_path: Path = parse_str("::std::primitive::f64").unwrap();
-    let core_path: Path = parse_str("::core::primitive::f64").unwrap();
-    let simple_path: Path = parse_str("f64").unwrap();
-
-    assert_eq!(resolver.resolve(&std_path), Some("f64"));
-    assert_eq!(resolver.resolve(&core_path), Some("f64"));
-    assert_eq!(resolver.resolve(&simple_path), Some("f64"));
-    assert_eq!(resolver.len(), 3);
-}
-
-#[test]
-fn primitives_resolver() {
-    let resolver = PathResolver::with_primitives();
-    assert!(!resolver.is_empty());
-
-    // Test primitive types
-    let f64_std: Path = parse_str("::std::primitive::f64").unwrap();
-    let f64_core: Path = parse_str("::core::primitive::f64").unwrap();
-    let i32_std: Path = parse_str("std::i32").unwrap();
-
-    assert_eq!(resolver.resolve(&f64_std), Some("f64"));
-    assert_eq!(resolver.resolve(&f64_core), Some("f64"));
-    assert_eq!(resolver.resolve(&i32_std), Some("i32"));
-
-    // Test common std types
     let string_path: Path = parse_str("std::string::String").unwrap();
     let vec_path: Path = parse_str("std::vec::Vec").unwrap();
 
@@ -81,46 +34,102 @@ fn primitives_resolver() {
 }
 
 #[test]
-fn has_mapping() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("std::string::String", "String");
+fn overwrite_mapping() {
+    let mut resolver = DynamicPathResolver::default();
+    resolver.add_mapping("std::string::String", "FirstString");
+    resolver.add_mapping("std::string::String", "SecondString");
 
-    let mapped_path: Path = parse_str("std::string::String").unwrap();
-    let unmapped_path: Path = parse_str("std::vec::Vec").unwrap();
-
-    assert!(resolver.has_mapping(&mapped_path));
-    assert!(!resolver.has_mapping(&unmapped_path));
+    let path: Path = parse_str("std::string::String").unwrap();
+    assert_eq!(resolver.resolve(&path), Some("SecondString"));
 }
 
 #[test]
-fn canonical_types_and_patterns() {
-    let mut resolver = PathResolver::new();
+fn leading_colon_normalization() {
+    let mut resolver = DynamicPathResolver::default();
     resolver.add_mapping("std::string::String", "String");
-    resolver.add_mapping("std::vec::Vec", "Vec");
-    resolver.add_mapping("core::option::Option", "Option");
 
-    let canonical_types: Vec<&str> = resolver.canonical_types().collect();
-    let path_patterns: Vec<&str> = resolver.path_patterns().collect();
+    let path1: Path = parse_str("std::string::String").unwrap();
+    let path2: Path = parse_str("::std::string::String").unwrap();
 
-    assert_eq!(canonical_types.len(), 3);
-    assert_eq!(path_patterns.len(), 3);
+    assert_eq!(resolver.resolve(&path1), Some("String"));
+    assert_eq!(resolver.resolve(&path2), Some("String"));
+}
 
-    assert!(canonical_types.contains(&"String"));
-    assert!(canonical_types.contains(&"Vec"));
-    assert!(canonical_types.contains(&"Option"));
+#[test]
+fn raw_identifier_normalization() {
+    let mut resolver = DynamicPathResolver::default();
+    resolver.add_mapping("std::string::String", "String");
 
-    assert!(path_patterns.contains(&"std::string::String"));
-    assert!(path_patterns.contains(&"std::vec::Vec"));
-    assert!(path_patterns.contains(&"core::option::Option"));
+    let normal_path: Path = parse_str("std::string::String").unwrap();
+    let raw_path: Path = parse_str("r#std::r#string::String").unwrap();
+
+    assert_eq!(resolver.resolve(&normal_path), Some("String"));
+    assert_eq!(resolver.resolve(&raw_path), Some("String"));
+}
+
+#[test]
+fn primitive_types_disabled() {
+    let resolver = DynamicPathResolver::default();
+    assert!(!resolver.uses_primitives());
+
+    let path: Path = parse_str("std::primitive::i32").unwrap();
+    assert!(resolver.resolve(&path).is_none());
+}
+
+#[test]
+fn primitive_types_enabled() {
+    let resolver = DynamicPathResolver::with_primitives();
+    assert!(resolver.uses_primitives());
+
+    let path: Path = parse_str("std::primitive::i32").unwrap();
+    assert_eq!(resolver.resolve(&path), Some("i32"));
+}
+
+#[test]
+fn set_use_primitives() {
+    let mut resolver = DynamicPathResolver::default();
+    assert!(!resolver.uses_primitives());
+
+    resolver.set_use_primitives(true);
+    assert!(resolver.uses_primitives());
+
+    let path: Path = parse_str("std::primitive::f64").unwrap();
+    assert_eq!(resolver.resolve(&path), Some("f64"));
+
+    resolver.set_use_primitives(false);
+    assert!(!resolver.uses_primitives());
+    assert!(resolver.resolve(&path).is_none());
+}
+
+#[test]
+fn has_mapping() {
+    let mut resolver = DynamicPathResolver::default();
+    resolver.add_mapping("custom::Type", "CustomType");
+
+    let custom_path: Path = parse_str("custom::Type").unwrap();
+    let unknown_path: Path = parse_str("unknown::Type").unwrap();
+
+    assert!(resolver.has_mapping(&custom_path));
+    assert!(!resolver.has_mapping(&unknown_path));
+}
+
+#[test]
+fn has_mapping_with_primitives() {
+    let resolver = DynamicPathResolver::with_primitives();
+
+    let primitive_path: Path = parse_str("std::primitive::i32").unwrap();
+    let unknown_path: Path = parse_str("unknown::Type").unwrap();
+
+    assert!(resolver.has_mapping(&primitive_path));
+    assert!(!resolver.has_mapping(&unknown_path));
 }
 
 #[test]
 fn clear_mappings() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("std::string::String", "String");
-    resolver.add_mapping("std::vec::Vec", "Vec");
+    let mut resolver = DynamicPathResolver::default();
+    resolver.add_mapping("custom::Type", "CustomType");
 
-    assert_eq!(resolver.len(), 2);
+    assert_eq!(resolver.len(), 1);
     assert!(!resolver.is_empty());
 
     resolver.clear();
@@ -130,39 +139,28 @@ fn clear_mappings() {
 }
 
 #[test]
-fn complex_raw_identifier_resolution() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("my::custom::Type", "CustomType");
+fn from_map() {
+    let mut mappings = std::collections::HashMap::new();
+    mappings.insert("custom::Type".to_string(), "CustomType".to_string());
+    mappings.insert("another::Type".to_string(), "AnotherType".to_string());
 
-    let complex_path: Path = parse_str("::r#my::r#custom::r#Type").unwrap();
-    assert_eq!(resolver.resolve(&complex_path), Some("CustomType"));
+    let resolver = DynamicPathResolver::from_map(mappings, false);
+
+    assert_eq!(resolver.len(), 2);
+    assert!(!resolver.uses_primitives());
+
+    let path1: Path = parse_str("custom::Type").unwrap();
+    let path2: Path = parse_str("another::Type").unwrap();
+
+    assert_eq!(resolver.resolve(&path1), Some("CustomType"));
+    assert_eq!(resolver.resolve(&path2), Some("AnotherType"));
 }
 
 #[test]
-fn case_sensitive_mapping() {
-    let mut resolver = PathResolver::new();
-    resolver.add_mapping("std::string::String", "String");
-    resolver.add_mapping("std::string::string", "string");
+fn len_with_primitives() {
+    let empty_resolver = DynamicPathResolver::default();
+    let primitive_resolver = DynamicPathResolver::with_primitives();
 
-    let upper_path: Path = parse_str("std::string::String").unwrap();
-    let lower_path: Path = parse_str("std::string::string").unwrap();
-
-    assert_eq!(resolver.resolve(&upper_path), Some("String"));
-    assert_eq!(resolver.resolve(&lower_path), Some("string"));
-}
-
-#[test]
-fn no_mapping_returns_none() {
-    let resolver = PathResolver::new();
-
-    let unmapped_path: Path = parse_str("some::unknown::Path").unwrap();
-    assert_eq!(resolver.resolve(&unmapped_path), None);
-    assert!(!resolver.has_mapping(&unmapped_path));
-}
-
-#[test]
-fn default_resolver() {
-    let resolver = PathResolver::default();
-    assert!(resolver.is_empty());
-    assert_eq!(resolver.len(), 0);
+    assert_eq!(empty_resolver.len(), 0);
+    assert_eq!(primitive_resolver.len(), 74); // Number of primitive mappings
 }
