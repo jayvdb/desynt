@@ -5,11 +5,8 @@ use syn::Path;
 fn test_progressive_path_resolution() {
     let mut resolver = DynamicPathResolver::with_primitives();
 
-    // Add only full qualified mappings - the resolver should automatically
-    // handle shorter variations and generic types
-    resolver.add_mapping("std::option::Option", "Option");
-    resolver.add_mapping("std::vec::Vec", "Vec");
-    resolver.add_mapping("std::collections::HashMap", "HashMap");
+    // with_primitives() already includes stdlib mappings
+    // Add only custom mappings for testing
     resolver.add_mapping("my::custom::Type", "CustomType");
 
     let test_cases = vec![

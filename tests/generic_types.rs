@@ -3,11 +3,9 @@ use syn::Path;
 
 #[test]
 fn test_generic_type_resolution() {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_primitives();
 
-    // Add mapping for Option - try both variations
-    resolver.add_mapping("std::option::Option", "Option");
-    resolver.add_mapping("Option", "Option");
+    // Test if with_primitives() alone can handle Option<T> -> Option resolution
 
     // Test parsing a path with generic arguments
     let path_str = "Option<butane::ForeignKey<Foo>>";
@@ -32,12 +30,9 @@ fn test_generic_type_resolution() {
 
 #[test]
 fn test_complex_generic_types() {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_primitives();
 
-    // Add mappings for base types
-    resolver.add_mapping("Vec", "Vec");
-    resolver.add_mapping("HashMap", "HashMap");
-    resolver.add_mapping("Option", "Option");
+    // with_primitives() already includes all stdlib types we need
 
     let test_cases = vec![
         ("Vec<String>", Some("Vec")),
@@ -56,12 +51,12 @@ fn test_complex_generic_types() {
 
 #[test]
 fn test_generic_resolution_strategies() {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_primitives();
 
     // Test different resolution strategies
 
-    // Strategy 1: Full path resolution (existing behavior)
-    resolver.add_mapping("std::option::Option", "Option");
+    // Strategy 1: Full path resolution (with_primitives already includes this)
+    // No need to add std::option::Option -> Option explicitly
 
     let path1: Path = syn::parse_str("std::option::Option").unwrap();
     assert_eq!(resolver.resolve(&path1), Some("Option"));
@@ -70,8 +65,7 @@ fn test_generic_resolution_strategies() {
     let path2: Path = syn::parse_str("std::option::Option<String>").unwrap();
     assert_eq!(resolver.resolve(&path2), Some("Option")); // Should find via full path reconstruction
 
-    // Strategy 3: Short base type resolution
-    resolver.add_mapping("Result", "Result");
+    // Strategy 3: Short base type resolution (with_primitives already includes Result)
     let path3: Path = syn::parse_str("Result<String, Error>").unwrap();
     assert_eq!(resolver.resolve(&path3), Some("Result")); // Should find via base type lookup
 

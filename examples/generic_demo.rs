@@ -5,14 +5,14 @@ fn main() {
     println!("=== Generic Type Resolution Demo ===");
     println!();
 
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_primitives();
 
-    // Add only specific mappings - the resolver should be smart enough
-    // to handle various path forms automatically
-    resolver.add_mapping("std::option::Option", "Option");
-    resolver.add_mapping("std::vec::Vec", "Vec");
-    resolver.add_mapping("std::collections::HashMap", "HashMap");
-    resolver.add_mapping("std::result::Result", "Result");
+    // No need to add explicit stdlib mappings - with_primitives() includes:
+    // - std::option::Option -> Option
+    // - std::vec::Vec -> Vec
+    // - std::collections::HashMap -> HashMap
+    // - std::result::Result -> Result
+    // (and many more primitive and stdlib types)
 
     // Test cases that should now work automatically
     let test_cases = vec![
