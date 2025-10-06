@@ -174,9 +174,9 @@ impl StripRaw for Ident {
 
     fn strip_raw(&self) -> Self::Output {
         let ident_str = self.to_string();
-        if ident_str.starts_with("r#") {
+        if let Some(stripped) = ident_str.strip_prefix("r#") {
             // Create a new Ident without the raw prefix
-            Ident::new(&ident_str[2..], self.span())
+            Ident::new(stripped, self.span())
         } else {
             self.clone()
         }
@@ -320,7 +320,6 @@ pub mod utils {
 /// const PRIMITIVE_RESOLVER: PathResolver<EmptyStorage> =
 ///     PathResolver::new(EmptyStorage, true);
 /// ```
-
 /// Const primitive type mappings - implementation created in get_primitive_mapping_static
 #[cfg(feature = "static-resolver")]
 fn get_primitive_mapping_static(path: &str) -> Option<&'static str> {
@@ -611,10 +610,10 @@ where
         let mut candidates: Vec<(&str, &str)> = Vec::new();
 
         for key in self.mappings.keys() {
-            if key.ends_with(&suffix) {
-                if let Some(result) = self.try_resolve_base_type(key) {
-                    candidates.push((key, result));
-                }
+            if key.ends_with(&suffix)
+                && let Some(result) = self.try_resolve_base_type(key)
+            {
+                candidates.push((key, result));
             }
         }
 
@@ -871,8 +870,8 @@ where
         let segments: Vec<&str> = path_str
             .split("::")
             .map(|segment| {
-                if segment.starts_with("r#") {
-                    &segment[2..]
+                if let Some(stripped) = segment.strip_prefix("r#") {
+                    stripped
                 } else {
                     segment
                 }
