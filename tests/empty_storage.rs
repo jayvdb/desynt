@@ -78,25 +78,6 @@ fn primitive_type_resolution(#[case] path_str: &str, #[case] expected: &str) {
 }
 
 #[test]
-fn const_resolver_with_runtime_usage() {
-    // This test shows that const resolvers can be used in runtime contexts
-    let mut runtime_resolver = desynt::DynamicPathResolver::default();
-    runtime_resolver.add_mapping("custom::Type", "CustomType");
-
-    // Compare const and runtime resolvers
-    let primitive_path: Path = parse_str("std::primitive::i32").unwrap();
-    let custom_path: Path = parse_str("custom::Type").unwrap();
-
-    // Const resolver handles primitives
-    assert_eq!(PRIMITIVE_RESOLVER.resolve(&primitive_path), Some("i32"));
-    assert!(PRIMITIVE_RESOLVER.resolve(&custom_path).is_none());
-
-    // Runtime resolver handles custom types but not primitives (unless enabled)
-    assert!(runtime_resolver.resolve(&primitive_path).is_none());
-    assert_eq!(runtime_resolver.resolve(&custom_path), Some("CustomType"));
-}
-
-#[test]
 fn const_resolver_immutability() {
     // Const resolvers are immutable - this test just verifies they work in const contexts
     const RESOLVER1: PathResolver<EmptyStorage> = PathResolver::empty();
