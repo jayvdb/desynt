@@ -1,18 +1,21 @@
 use desynt::utils;
+use rstest::rstest;
 
-#[test]
-fn is_raw_ident() {
-    assert!(utils::is_raw_ident("r#type"));
-    assert!(!utils::is_raw_ident("type"));
-    assert!(!utils::is_raw_ident("r"));
-    assert!(!utils::is_raw_ident("#type"));
+#[rstest]
+#[case::raw_type("r#type", true)]
+#[case::normal_type("type", false)]
+#[case::just_r("r", false)]
+#[case::hash_type("#type", false)]
+fn is_raw_ident(#[case] input: &str, #[case] expected: bool) {
+    assert_eq!(utils::is_raw_ident(input), expected);
 }
 
-#[test]
-fn strip_raw_prefix() {
-    assert_eq!(utils::strip_raw_prefix("r#type"), "type");
-    assert_eq!(utils::strip_raw_prefix("type"), "type");
-    assert_eq!(utils::strip_raw_prefix("r#"), "");
+#[rstest]
+#[case::raw_type_to_type("r#type", "type")]
+#[case::normal_type_unchanged("type", "type")]
+#[case::raw_empty("r#", "")]
+fn strip_raw_prefix(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(utils::strip_raw_prefix(input), expected);
 }
 
 #[test]

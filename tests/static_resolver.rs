@@ -1,5 +1,6 @@
 use desynt::{PathResolver, create_static_resolver};
 use phf::{Map, phf_map};
+use rstest::rstest;
 use syn::{Path, parse_str};
 
 // Test PHF mappings
@@ -67,27 +68,22 @@ fn static_resolver_custom_and_primitives() {
     assert_eq!(RESOLVER.resolve(&primitive_path), Some("i32"));
 }
 
-#[test]
-fn static_resolver_all_mappings() {
+#[rstest]
+#[case::custom_type1("custom::Type1", Some("Type1"))]
+#[case::custom_type2("custom::Type2", Some("Type2"))]
+#[case::another_custom("another::Custom", Some("AnotherCustom"))]
+#[case::my_special_type("my::special::Type", Some("SpecialType"))]
+#[case::unknown_type("unknown::Type", None)]
+fn static_resolver_all_mappings(#[case] path_str: &str, #[case] expected: Option<&str>) {
     const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
 
-    let test_cases = [
-        ("custom::Type1", Some("Type1")),
-        ("custom::Type2", Some("Type2")),
-        ("another::Custom", Some("AnotherCustom")),
-        ("my::special::Type", Some("SpecialType")),
-        ("unknown::Type", None),
-    ];
-
-    for (path_str, expected) in &test_cases {
-        let path: Path = parse_str(path_str).unwrap();
-        assert_eq!(
-            RESOLVER.resolve(&path),
-            *expected,
-            "Failed to resolve {} correctly",
-            path_str
-        );
-    }
+    let path: Path = parse_str(path_str).unwrap();
+    assert_eq!(
+        RESOLVER.resolve(&path),
+        expected,
+        "Failed to resolve {} correctly",
+        path_str
+    );
 }
 
 #[test]

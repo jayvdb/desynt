@@ -1,4 +1,5 @@
 use desynt::{EMPTY_RESOLVER, EmptyStorage, PRIMITIVE_RESOLVER, PathResolver};
+use rstest::rstest;
 use syn::{Path, parse_str};
 
 #[test]
@@ -45,40 +46,35 @@ fn global_empty_resolver() {
     assert!(EMPTY_RESOLVER.resolve(&path).is_none());
 }
 
-#[test]
-fn primitive_type_resolution() {
+#[rstest]
+#[case::std_i8("std::primitive::i8", "i8")]
+#[case::core_i16("core::primitive::i16", "i16")]
+#[case::std_i32("std::i32", "i32")]
+#[case::core_i64("core::i64", "i64")]
+#[case::std_u8("std::primitive::u8", "u8")]
+#[case::core_u16("core::primitive::u16", "u16")]
+#[case::std_u32("std::u32", "u32")]
+#[case::core_u64("core::u64", "u64")]
+#[case::std_f32("std::primitive::f32", "f32")]
+#[case::core_f64("core::primitive::f64", "f64")]
+#[case::std_bool("std::primitive::bool", "bool")]
+#[case::core_char("core::primitive::char", "char")]
+#[case::std_str("std::primitive::str", "str")]
+#[case::std_string("std::string::String", "String")]
+#[case::std_vec("std::vec::Vec", "Vec")]
+#[case::std_option("std::option::Option", "Option")]
+#[case::std_result("std::result::Result", "Result")]
+fn primitive_type_resolution(#[case] path_str: &str, #[case] expected: &str) {
     const RESOLVER: PathResolver<EmptyStorage> = PathResolver::primitives_only();
 
-    let test_cases = [
-        ("std::primitive::i8", "i8"),
-        ("core::primitive::i16", "i16"),
-        ("std::i32", "i32"),
-        ("core::i64", "i64"),
-        ("std::primitive::u8", "u8"),
-        ("core::primitive::u16", "u16"),
-        ("std::u32", "u32"),
-        ("core::u64", "u64"),
-        ("std::primitive::f32", "f32"),
-        ("core::primitive::f64", "f64"),
-        ("std::primitive::bool", "bool"),
-        ("core::primitive::char", "char"),
-        ("std::primitive::str", "str"),
-        ("std::string::String", "String"),
-        ("std::vec::Vec", "Vec"),
-        ("std::option::Option", "Option"),
-        ("std::result::Result", "Result"),
-    ];
-
-    for (path_str, expected) in &test_cases {
-        let path: Path = parse_str(path_str).unwrap();
-        assert_eq!(
-            RESOLVER.resolve(&path),
-            Some(*expected),
-            "Failed to resolve {} to {}",
-            path_str,
-            expected
-        );
-    }
+    let path: Path = parse_str(path_str).unwrap();
+    assert_eq!(
+        RESOLVER.resolve(&path),
+        Some(expected),
+        "Failed to resolve {} to {}",
+        path_str,
+        expected
+    );
 }
 
 #[test]

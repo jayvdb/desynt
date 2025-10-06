@@ -1,4 +1,5 @@
 use desynt::{HasRaw, StripRaw};
+use rstest::rstest;
 use syn::{Path, parse_str};
 
 #[test]
@@ -121,46 +122,41 @@ fn complex_primitive_path_with_raw() {
     assert!(complex_path.has_raw());
 }
 
-#[test]
-fn various_primitive_types() {
-    let primitives = vec![
-        "::std::num::i8",
-        "::std::num::i16",
-        "::std::num::i32",
-        "::std::num::i64",
-        "::std::num::i128",
-        "::std::num::u8",
-        "::std::num::u16",
-        "::std::num::u32",
-        "::std::num::u64",
-        "::std::num::u128",
-        "::std::num::f32",
-        "::std::num::f64",
-        "::core::str",
-        "::std::string::String",
-    ];
+#[rstest]
+#[case::i8("::std::num::i8")]
+#[case::i16("::std::num::i16")]
+#[case::i32("::std::num::i32")]
+#[case::i64("::std::num::i64")]
+#[case::i128("::std::num::i128")]
+#[case::u8("::std::num::u8")]
+#[case::u16("::std::num::u16")]
+#[case::u32("::std::num::u32")]
+#[case::u64("::std::num::u64")]
+#[case::u128("::std::num::u128")]
+#[case::f32("::std::num::f32")]
+#[case::f64("::std::num::f64")]
+#[case::str("::core::str")]
+#[case::string("::std::string::String")]
+fn various_primitive_types(#[case] primitive: &str) {
+    let path: Path = parse_str(primitive).unwrap();
+    let stripped = path.strip_raw();
 
-    for primitive in primitives {
-        let path: Path = parse_str(primitive).unwrap();
-        let stripped = path.strip_raw();
+    // Should not have raw identifiers in these basic cases
+    assert!(!path.has_raw());
 
-        // Should not have raw identifiers in these basic cases
-        assert!(!path.has_raw());
+    // Stripping should not change anything for non-raw paths
+    let original_segments: Vec<String> = path
+        .segments
+        .iter()
+        .map(|seg| seg.ident.to_string())
+        .collect();
+    let stripped_segments: Vec<String> = stripped
+        .segments
+        .iter()
+        .map(|seg| seg.ident.to_string())
+        .collect();
 
-        // Stripping should not change anything for non-raw paths
-        let original_segments: Vec<String> = path
-            .segments
-            .iter()
-            .map(|seg| seg.ident.to_string())
-            .collect();
-        let stripped_segments: Vec<String> = stripped
-            .segments
-            .iter()
-            .map(|seg| seg.ident.to_string())
-            .collect();
-
-        assert_eq!(original_segments, stripped_segments);
-    }
+    assert_eq!(original_segments, stripped_segments);
 }
 
 #[test]

@@ -1,8 +1,9 @@
 use desynt::DynamicPathResolver;
+use rstest::rstest;
 use syn::Path;
 
 #[test]
-fn test_generic_type_resolution() {
+fn generic_type_resolution() {
     let resolver = DynamicPathResolver::with_primitives();
 
     // Test if with_primitives() alone can handle Option<T> -> Option resolution
@@ -28,48 +29,32 @@ fn test_generic_type_resolution() {
     assert_eq!(result, Some("Option"));
 }
 
-#[test]
-fn test_complex_generic_types() {
+#[rstest]
+#[case::vec_string("Vec<String>", Some("Vec"))]
+#[case::hashmap_string_i32("HashMap<String, i32>", Some("HashMap"))]
+#[case::nested_option_vec_hashmap("Option<Vec<HashMap<String, i32>>>", Some("Option"))]
+#[case::fully_qualified_std_paths("std::option::Option<std::vec::Vec<String>>", Some("Option"))]
+fn complex_generic_types(#[case] input: &str, #[case] expected: Option<&str>) {
     let resolver = DynamicPathResolver::with_primitives();
 
-    // with_primitives() already includes all stdlib types we need
-
-    let test_cases = vec![
-        ("Vec<String>", Some("Vec")),
-        ("HashMap<String, i32>", Some("HashMap")),
-        ("Option<Vec<HashMap<String, i32>>>", Some("Option")),
-        ("std::option::Option<std::vec::Vec<String>>", Some("Option")),
-    ];
-
-    for (case, expected) in test_cases {
-        let path: Path = syn::parse_str(case).unwrap();
-        let result = resolver.resolve(&path);
-        println!("Testing: {} -> {:?}", case, result);
-        assert_eq!(result, expected, "Failed for case: {}", case);
-    }
+    let path: Path = syn::parse_str(input).unwrap();
+    let result = resolver.resolve(&path);
+    println!("Testing: {} -> {:?}", input, result);
+    assert_eq!(result, expected, "Failed for case: {}", input);
 }
 
-#[test]
-fn test_generic_resolution_strategies() {
+#[rstest]
+#[case::full_path_resolution("std::option::Option", Some("Option"))]
+#[case::base_type_with_generics("std::option::Option<String>", Some("Option"))]
+#[case::short_base_type("Result<String, Error>", Some("Result"))]
+#[case::unknown_type("UnknownType<T>", None)]
+fn generic_resolution_strategies(
+    #[case] input: &str,
+    #[case] expected: Option<&str>,
+) {
     let resolver = DynamicPathResolver::with_primitives();
 
-    // Test different resolution strategies
-
-    // Strategy 1: Full path resolution (with_primitives already includes this)
-    // No need to add std::option::Option -> Option explicitly
-
-    let path1: Path = syn::parse_str("std::option::Option").unwrap();
-    assert_eq!(resolver.resolve(&path1), Some("Option"));
-
-    // Strategy 2: Base type resolution for generic types
-    let path2: Path = syn::parse_str("std::option::Option<String>").unwrap();
-    assert_eq!(resolver.resolve(&path2), Some("Option")); // Should find via full path reconstruction
-
-    // Strategy 3: Short base type resolution (with_primitives already includes Result)
-    let path3: Path = syn::parse_str("Result<String, Error>").unwrap();
-    assert_eq!(resolver.resolve(&path3), Some("Result")); // Should find via base type lookup
-
-    // Strategy 4: No mapping found
-    let path4: Path = syn::parse_str("UnknownType<T>").unwrap();
-    assert_eq!(resolver.resolve(&path4), None);
+    let path: Path = syn::parse_str(input).unwrap();
+    let result = resolver.resolve(&path);
+    assert_eq!(result, expected, "Failed for: {}", input);
 }
