@@ -7,13 +7,6 @@ fn main() {
 
     let resolver = DynamicPathResolver::with_primitives();
 
-    // No need to add explicit stdlib mappings - with_primitives() includes:
-    // - std::option::Option -> Option
-    // - std::vec::Vec -> Vec
-    // - std::collections::HashMap -> HashMap
-    // - std::result::Result -> Result
-    // (and many more primitive and stdlib types)
-
     // Test cases that should now work automatically
     let test_cases = vec![
         "Option<butane::ForeignKey<Foo>>", // Should resolve via "Option"
