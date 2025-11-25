@@ -15,10 +15,10 @@
 //! ```
 
 use std::collections::HashMap;
-use syn::{Ident, Path, PathArguments, PathSegment};
 
 #[cfg(feature = "static-resolver")]
 use phf::Map;
+use syn::{Ident, Path, PathArguments, PathSegment};
 
 /// A trait for mapping storage that can be used with PathResolver.
 pub trait MappingStorage {
@@ -610,10 +610,10 @@ where
         let mut candidates: Vec<(&str, &str)> = Vec::new();
 
         for key in self.mappings.keys() {
-            if key.ends_with(&suffix)
-                && let Some(result) = self.try_resolve_base_type(key)
-            {
-                candidates.push((key, result));
+            if key.ends_with(&suffix) {
+                if let Some(result) = self.try_resolve_base_type(key) {
+                    candidates.push((key, result));
+                }
             }
         }
 
