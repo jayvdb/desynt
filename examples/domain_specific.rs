@@ -1,4 +1,4 @@
-use desynt::{DynamicPathResolver, PathResolver, create_static_resolver};
+use desynt::{DynamicPathResolver, PathResolver, TypeGroups, create_static_resolver};
 use phf::{Map, phf_map};
 
 // Domain-specific type mappings for web applications
@@ -62,10 +62,10 @@ const DATABASE_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
 
 // Create const resolvers for different domains
 const WEB_RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-    create_static_resolver(&WEB_MAPPINGS, true);
+    create_static_resolver(&WEB_MAPPINGS, TypeGroups::ALL);
 
 const DATABASE_RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-    create_static_resolver(&DATABASE_MAPPINGS, true);
+    create_static_resolver(&DATABASE_MAPPINGS, TypeGroups::ALL);
 
 fn main() {
     println!("=== Domain-Specific PathResolver Examples ===\n");

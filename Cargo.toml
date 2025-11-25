@@ -3,7 +3,7 @@ name = "desynt"
 description = "Convert syn paths & idents to normalised names"
 repository = "https://github.com/jayvdb/desynt"
 license = "MIT OR Apache-2.0"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 

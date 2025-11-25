@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use desynt::DynamicPathResolver;
 use rstest::rstest;
 use syn::Path;
@@ -28,9 +30,9 @@ use syn::Path;
 #[case::custom_type_exact("my::custom::Type", Some("CustomType"))]
 #[case::custom_type_generic("my::custom::Type<T>", Some("CustomType"))]
 fn progressive_path_resolution(#[case] input: &str, #[case] expected: Option<&str>) {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let mut resolver = DynamicPathResolver::with_all_groups();
 
-    // with_primitives() already includes stdlib mappings
+    // with_all_groups() includes all type groups (primitives + prelude + common std)
     // Add only custom mappings for testing
     resolver.add_mapping("my::custom::Type", "CustomType");
 
@@ -57,7 +59,7 @@ fn progressive_path_resolution(#[case] input: &str, #[case] expected: Option<&st
 #[case::my_special_type_generic("my::special::Type<T>", Some("SpecialType"))]
 #[case::another_type_generic("another::Type<T>", Some("AnotherType"))]
 fn conservative_suffix_matching(#[case] input: &str, #[case] expected: Option<&str>) {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let mut resolver = DynamicPathResolver::with_all_groups();
 
     // Add mappings that could create false positives
     resolver.add_mapping("std::option::Option", "StdOption");
@@ -85,7 +87,7 @@ fn conservative_suffix_matching(#[case] input: &str, #[case] expected: Option<&s
 #[case::type_generic("Type<String>", Some("CustomType"))] // Single segment generic
 #[case::custom_type_generic("my::custom::Type<String>", Some("CustomType"))] // Full path with generic
 fn stdlib_and_custom_type_parity(#[case] input: &str, #[case] expected: Option<&str>) {
-    let mut resolver = DynamicPathResolver::with_primitives();
+    let mut resolver = DynamicPathResolver::with_all_groups();
 
     // Add both stdlib and custom mappings
     resolver.add_mapping("std::option::Option", "StdOption");
@@ -100,9 +102,9 @@ fn stdlib_and_custom_type_parity(#[case] input: &str, #[case] expected: Option<&
 
 #[test]
 fn generic_type_resolution() {
-    let resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_all_groups();
 
-    // Test if with_primitives() alone can handle Option<T> -> Option resolution
+    // Test if with_all_groups() alone can handle Option<T> -> Option resolution
 
     // Test parsing a path with generic arguments
     let path_str = "Option<butane::ForeignKey<Foo>>";
@@ -145,7 +147,7 @@ fn generic_type_resolution() {
 #[case::short_base_type("Result<String, Error>", Some("Result"))]
 #[case::unknown_type("UnknownType<T>", None)]
 fn complex_generic_types(#[case] input: &str, #[case] expected: Option<&str>) {
-    let resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_all_groups();
 
     let path: Path = syn::parse_str(input).unwrap();
     let result = resolver.resolve(&path);

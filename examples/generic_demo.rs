@@ -5,7 +5,7 @@ fn main() {
     println!("=== Generic Type Resolution Demo ===");
     println!();
 
-    let resolver = DynamicPathResolver::with_primitives();
+    let resolver = DynamicPathResolver::with_prelude();
 
     // Test cases that should now work automatically
     let test_cases = vec![

@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use desynt::{HasRaw, StripRaw};
 use syn::{Ident, parse_str};
 

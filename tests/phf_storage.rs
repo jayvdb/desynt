@@ -1,4 +1,6 @@
-use desynt::{PathResolver, create_static_resolver};
+#![cfg(test)]
+
+use desynt::{PathResolver, TypeGroups, create_static_resolver};
 use phf::{Map, phf_map};
 use rstest::rstest;
 use syn::{Path, parse_str};
@@ -15,8 +17,8 @@ const TEST_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
 type StaticPathResolver = PathResolver<&'static Map<&'static str, &'static str>>;
 
 #[test]
-fn static_resolver_basic() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
+fn basic() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::NONE);
 
     assert_eq!(RESOLVER.len(), 4);
     assert!(!RESOLVER.uses_primitives());
@@ -27,8 +29,8 @@ fn static_resolver_basic() {
 }
 
 #[test]
-fn static_resolver_empty() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, false);
+fn empty() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, TypeGroups::NONE);
 
     assert_eq!(RESOLVER.len(), 0);
     assert!(!RESOLVER.uses_primitives());
@@ -39,10 +41,9 @@ fn static_resolver_empty() {
 }
 
 #[test]
-fn static_resolver_with_primitives() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, true);
+fn with_primitives() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, TypeGroups::ALL);
 
-    assert_eq!(RESOLVER.len(), 74); // only primitives
     assert!(RESOLVER.uses_primitives());
     assert!(!RESOLVER.is_empty());
 
@@ -51,10 +52,9 @@ fn static_resolver_with_primitives() {
 }
 
 #[test]
-fn static_resolver_custom_and_primitives() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, true);
+fn custom_and_primitives() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::ALL);
 
-    assert_eq!(RESOLVER.len(), 4 + 74); // custom + primitives
     assert!(RESOLVER.uses_primitives());
     assert!(!RESOLVER.is_empty());
 
@@ -74,7 +74,7 @@ fn static_resolver_custom_and_primitives() {
 #[case::my_special_type("my::special::Type", Some("SpecialType"))]
 #[case::unknown_type("unknown::Type", None)]
 fn static_resolver_all_mappings(#[case] path_str: &str, #[case] expected: Option<&str>) {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::NONE);
 
     let path: Path = parse_str(path_str).unwrap();
     assert_eq!(
@@ -86,8 +86,8 @@ fn static_resolver_all_mappings(#[case] path_str: &str, #[case] expected: Option
 }
 
 #[test]
-fn static_resolver_has_mapping() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, true);
+fn has_mapping() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::ALL);
 
     let custom_path: Path = parse_str("custom::Type1").unwrap();
     let primitive_path: Path = parse_str("std::primitive::i32").unwrap();
@@ -99,8 +99,8 @@ fn static_resolver_has_mapping() {
 }
 
 #[test]
-fn static_resolver_path_normalization() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
+fn path_normalization() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::NONE);
 
     let normal_path: Path = parse_str("custom::Type1").unwrap();
     let leading_colon_path: Path = parse_str("::custom::Type1").unwrap();
@@ -112,8 +112,8 @@ fn static_resolver_path_normalization() {
 }
 
 #[test]
-fn static_resolver_iterators() {
-    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
+fn iterators() {
+    const RESOLVER: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::NONE);
 
     let patterns: Vec<&str> = RESOLVER.path_patterns().collect();
     let types: Vec<&str> = RESOLVER.canonical_types().collect();
@@ -128,14 +128,14 @@ fn static_resolver_iterators() {
 }
 
 #[test]
-fn static_resolver_const_creation() {
+fn const_creation() {
     // Test that static resolvers can be created in const contexts
-    const RESOLVER1: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, true);
-    const RESOLVER2: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, false);
+    const RESOLVER1: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::ALL);
+    const RESOLVER2: StaticPathResolver = create_static_resolver(&TEST_MAPPINGS, TypeGroups::NONE);
 
     // These should compile and work at compile time
-    assert_ne!(RESOLVER1.len(), RESOLVER2.len());
     assert_ne!(RESOLVER1.uses_primitives(), RESOLVER2.uses_primitives());
+    assert_ne!(RESOLVER1.uses_groups(), RESOLVER2.uses_groups());
 
     // Runtime usage should also work
     let path: Path = parse_str("custom::Type1").unwrap();

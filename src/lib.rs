@@ -1,9 +1,17 @@
-//! A library for stripping raw prefixes from syn objects.
+//! A library for stripping raw prefixes from syn objects and resolving type paths.
 //!
-//! This library provides utilities to read syn objects like `Ident` and `Path`
-//! and strip raw identifier prefixes (the `r#` prefix used for raw identifiers in Rust).
+//! This library provides utilities to work with [`syn`](https://docs.rs/syn) objects:
 //!
-//! # Examples
+//! - **Raw identifier handling**: Strip `r#` prefixes from `Ident`, `Path`, and `PathSegment` objects
+//! - **Path resolution**: Map various type path representations to canonical forms
+//! - **Type group support**: Handle Rust primitives, prelude types, and common std types
+//! - **Multiple storage backends**: Use HashMap (dynamic) or phf::Map (static)
+//!
+//! # Features
+//!
+//! ## Raw Identifier Stripping
+//!
+//! Use the [`StripRaw`] trait to remove `r#` prefixes from syn objects:
 //!
 //! ```
 //! use syn::Ident;
@@ -13,35 +21,81 @@
 //! let stripped = ident.strip_raw();
 //! assert_eq!(stripped.to_string(), "type");
 //! ```
+//!
+//! ## Path Resolution
+//!
+//! Use [`PathResolver`] to normalize type paths and resolve them to canonical forms.
+//! This is useful in proc macros where types can be referenced in multiple ways:
+//!
+//! ```
+//! use desynt::{TypeGroups, DynamicPathResolver};
+//! use std::collections::HashMap;
+//! use syn::Path;
+//!
+//! let mut mappings = HashMap::new();
+//! mappings.insert("my_crate::types::UserId".to_string(), "UserId".to_string());
+//!
+//! let resolver = DynamicPathResolver::from_map(mappings, TypeGroups::ALL);
+//!
+//! // Resolves custom types
+//! let path: Path = syn::parse_str("my_crate::types::UserId").unwrap();
+//! assert_eq!(resolver.resolve(&path), Some("UserId"));
+//!
+//! // Also handles type groups with various path forms
+//! let path: Path = syn::parse_str("std::option::Option").unwrap();
+//! assert_eq!(resolver.resolve(&path), Some("Option"));
+//!
+//! let path: Path = syn::parse_str("Option<String>").unwrap();
+//! assert_eq!(resolver.resolve(&path), Some("Option"));
+//! ```
+//!
+//! ## Built-in Type Categories
+//!
+//! The [`TypeGroups`] struct lets you control which standard types are automatically resolved:
+//!
+//! - **Primitives**: Language primitives (i8, u32, f64, bool, char, str, etc.)
+//! - **Prelude**: Types in the Rust prelude (String, Vec, Option, Result, Box)
+//! - **Common std**: Frequently used std types (HashMap, HashSet)
+//!
+//! Use the predefined constants for common configurations:
+//! - [`TypeGroups::NONE`] - No type groups
+//! - [`TypeGroups::PRIMITIVES`] - Only primitives
+//! - [`TypeGroups::PRELUDE`] - Primitives + prelude types
+//! - [`TypeGroups::ALL`] - All type groups
 
 use std::collections::HashMap;
+
+mod definitions;
 
 #[cfg(feature = "static-resolver")]
 use phf::Map;
 use syn::{Ident, Path, PathArguments, PathSegment};
 
-/// A trait for mapping storage that can be used with PathResolver.
+/// Storage backend for path-to-canonical-type mappings.
+///
+/// This trait abstracts over different storage implementations used by [`PathResolver`],
+/// allowing for dynamic (HashMap), static (phf::Map), or empty storage backends.
 pub trait MappingStorage {
-    /// Get a canonical type name for a given normalized path.
+    /// Returns the canonical type name for the given normalized path.
     fn get(&self, path: &str) -> Option<&str>;
 
-    /// Check if the storage contains a mapping for the given path.
+    /// Returns `true` if the storage contains a mapping for the given path.
     fn contains_key(&self, path: &str) -> bool;
 
-    /// Get the number of mappings in the storage.
+    /// Returns the number of mappings in the storage.
     fn len(&self) -> usize;
 
-    /// Check if the storage is empty.
+    /// Returns `true` if the storage contains no mappings.
     fn is_empty(&self) -> bool;
 
-    /// Get all path patterns.
+    /// Returns an iterator over all path patterns in the storage.
     fn keys(&self) -> Box<dyn Iterator<Item = &str> + '_>;
 
-    /// Get all canonical type names.
+    /// Returns an iterator over all canonical type names in the storage.
     fn values(&self) -> Box<dyn Iterator<Item = &str> + '_>;
 }
 
-/// Implementation of MappingStorage for HashMap (dynamic mappings)
+/// Implementation of MappingStorage for HashMap (dynamic mappings).
 impl MappingStorage for HashMap<String, String> {
     fn get(&self, path: &str) -> Option<&str> {
         self.get(path).map(|s| s.as_str())
@@ -68,7 +122,7 @@ impl MappingStorage for HashMap<String, String> {
     }
 }
 
-/// Implementation of MappingStorage for PHF Map (static mappings)
+/// Implementation of MappingStorage for PHF Map (static mappings).
 #[cfg(feature = "static-resolver")]
 impl MappingStorage for Map<&'static str, &'static str> {
     fn get(&self, path: &str) -> Option<&str> {
@@ -96,7 +150,7 @@ impl MappingStorage for Map<&'static str, &'static str> {
     }
 }
 
-/// Implementation of MappingStorage for &PHF Map (static mappings)
+/// Implementation of MappingStorage for &PHF Map (static mappings).
 #[cfg(feature = "static-resolver")]
 impl MappingStorage for &Map<&'static str, &'static str> {
     fn get(&self, path: &str) -> Option<&str> {
@@ -124,7 +178,10 @@ impl MappingStorage for &Map<&'static str, &'static str> {
     }
 }
 
-/// Empty storage for when no custom mappings are needed
+/// Empty storage implementation with no custom mappings.
+///
+/// This storage backend is useful for const resolvers that only use
+/// type group mappings without any custom path mappings.
 #[derive(Debug, Clone, Copy)]
 pub struct EmptyStorage;
 
@@ -154,16 +211,23 @@ impl MappingStorage for EmptyStorage {
     }
 }
 
-/// A trait for stripping raw prefixes from syn objects.
+/// Strips raw identifier prefixes (`r#`) from syn objects.
+///
+/// This trait is implemented for [`Ident`], [`Path`], and [`PathSegment`],
+/// allowing you to normalize identifiers that use raw identifier syntax.
 pub trait StripRaw {
     /// The type returned after stripping raw prefixes.
     type Output;
 
-    /// Strip raw prefixes and return the cleaned object.
+    /// Returns a copy of this object with all raw identifier prefixes removed.
+    ///
+    /// For example, `r#type` becomes `type`.
     fn strip_raw(&self) -> Self::Output;
 }
 
-/// A trait for checking if a syn object has raw prefixes.
+/// Checks whether a syn object contains raw identifier prefixes.
+///
+/// This trait is implemented for [`Ident`], [`Path`], and [`PathSegment`].
 pub trait HasRaw {
     /// Returns true if the object contains raw identifiers.
     fn has_raw(&self) -> bool;
@@ -227,19 +291,53 @@ impl HasRaw for Path {
 pub mod utils {
     use syn::Ident;
 
-    /// Check if a string represents a raw identifier.
+    /// Check if the string represents a raw identifier (starts with `r#`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use desynt::utils::is_raw_ident;
+    ///
+    /// assert!(is_raw_ident("r#type"));
+    /// assert!(!is_raw_ident("type"));
+    /// ```
     pub fn is_raw_ident(s: &str) -> bool {
         s.starts_with("r#")
     }
 
-    /// Strip the raw prefix from a string if present.
+    /// Remove the `r#` prefix from a string if present.
+    ///
+    /// If the string doesn't start with `r#`, returns the original string unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use desynt::utils::strip_raw_prefix;
+    ///
+    /// assert_eq!(strip_raw_prefix("r#type"), "type");
+    /// assert_eq!(strip_raw_prefix("type"), "type");
+    /// ```
     pub fn strip_raw_prefix(s: &str) -> &str {
         if is_raw_ident(s) { &s[2..] } else { s }
     }
 
-    /// Create a new Ident from a string, automatically handling raw prefixes.
-    /// If the input has a raw prefix, it creates a raw identifier.
-    /// Otherwise, it creates a regular identifier.
+    /// Create a new [`Ident`] from a string, automatically handling raw prefixes.
+    ///
+    /// If the input starts with `r#`, creates a raw identifier.
+    /// Otherwise, creates a regular identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the string is not a valid identifier.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use desynt::utils::ident_from_string;
+    ///
+    /// let ident = ident_from_string("r#type").unwrap();
+    /// assert_eq!(ident.to_string(), "r#type");
+    /// ```
     pub fn ident_from_string(s: &str) -> syn::Result<Ident> {
         if is_raw_ident(s) {
             syn::parse_str(&format!("r#{}", &s[2..]))
@@ -258,17 +356,17 @@ pub mod utils {
 ///
 /// The resolver supports three resolution strategies:
 /// 1. **Exact path matching** - Direct lookup of the full path
-/// 2. **Generic type resolution** - Extracts base type from generics (e.g., `Option<T>` → `Option`)
+/// 2. **Generic type resolution** - Extracts base type from generics (e.g., `Option<T>` -> `Option`)
 /// 3. **Progressive path resolution** - Tries shorter path variations for standard library types
 ///
 /// ## Progressive Path Resolution
 ///
 /// This feature automatically handles common path variations without requiring explicit mappings
-/// for every variant. For example, if you map `std::option::Option` → `Option`, the resolver
+/// for every variant. For example, if you map `std::option::Option` -> `Option`, the resolver
 /// will automatically handle:
-/// - `Option<T>` → `Option` (single segment with generics)
-/// - `option::Option<T>` → `Option` (shortened qualified path)
-/// - `std::option::Option<T>` → `Option` (full qualified path with generics)
+/// - `Option<T>` -> `Option` (single segment with generics)
+/// - `option::Option<T>` -> `Option` (shortened qualified path)
+/// - `std::option::Option<T>` -> `Option` (full qualified path with generics)
 ///
 /// The progressive resolution is conservative and only applies to:
 /// - Common standard library types (`Option`, `Vec`, `HashMap`, etc.)
@@ -286,7 +384,7 @@ pub mod utils {
 ///
 /// ## Dynamic Usage with HashMap
 /// ```
-/// use desynt::PathResolver;
+/// use desynt::{TypeGroups, PathResolver};
 /// use std::collections::HashMap;
 /// use syn::Path;
 ///
@@ -294,7 +392,7 @@ pub mod utils {
 /// mappings.insert("std::primitive::f64".to_string(), "f64".to_string());
 /// mappings.insert("core::primitive::f64".to_string(), "f64".to_string());
 ///
-/// let resolver = PathResolver::new(mappings, true);
+/// let resolver = PathResolver::new(mappings, TypeGroups::ALL);
 ///
 /// let path: Path = syn::parse_str("::std::primitive::f64").unwrap();
 /// if let Some(canonical) = resolver.resolve(&path) {
@@ -304,7 +402,7 @@ pub mod utils {
 ///
 /// ## Static Usage with PHF Map
 /// ```
-/// use desynt::{PathResolver, EmptyStorage};
+/// use desynt::{TypeGroups, PathResolver, EmptyStorage};
 /// use phf::{phf_map, Map};
 ///
 /// // Define mappings in tests/examples where phf_map is allowed
@@ -314,167 +412,175 @@ pub mod utils {
 /// // };
 ///
 /// // const RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-/// //     PathResolver::new(&CUSTOM_MAPPINGS, true);
+/// //     PathResolver::new(&CUSTOM_MAPPINGS, TypeGroups::ALL);
 ///
 /// // Or with only primitives
 /// const PRIMITIVE_RESOLVER: PathResolver<EmptyStorage> =
-///     PathResolver::new(EmptyStorage, true);
+///     PathResolver::new(EmptyStorage, TypeGroups::PRIMITIVES);
 /// ```
-/// Const primitive type mappings - implementation created in get_primitive_mapping_static
-#[cfg(feature = "static-resolver")]
-fn get_primitive_mapping_static(path: &str) -> Option<&'static str> {
-    match path {
-        // Primitive integer types
-        "std::primitive::i8" | "core::primitive::i8" | "std::i8" | "core::i8" => Some("i8"),
-        "std::primitive::i16" | "core::primitive::i16" | "std::i16" | "core::i16" => Some("i16"),
-        "std::primitive::i32" | "core::primitive::i32" | "std::i32" | "core::i32" => Some("i32"),
-        "std::primitive::i64" | "core::primitive::i64" | "std::i64" | "core::i64" => Some("i64"),
-        "std::primitive::i128" | "core::primitive::i128" | "std::i128" | "core::i128" => {
-            Some("i128")
-        }
-        "std::primitive::isize" | "core::primitive::isize" | "std::isize" | "core::isize" => {
-            Some("isize")
-        }
 
-        // Primitive unsigned integer types
-        "std::primitive::u8" | "core::primitive::u8" | "std::u8" | "core::u8" => Some("u8"),
-        "std::primitive::u16" | "core::primitive::u16" | "std::u16" | "core::u16" => Some("u16"),
-        "std::primitive::u32" | "core::primitive::u32" | "std::u32" | "core::u32" => Some("u32"),
-        "std::primitive::u64" | "core::primitive::u64" | "std::u64" | "core::u64" => Some("u64"),
-        "std::primitive::u128" | "core::primitive::u128" | "std::u128" | "core::u128" => {
-            Some("u128")
-        }
-        "std::primitive::usize" | "core::primitive::usize" | "std::usize" | "core::usize" => {
-            Some("usize")
-        }
+/// Specify type groups to include automatically.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeGroups {
+    /// Whether to include Rust language primitives (i8, u32, f64, bool, char, str, etc.).
+    pub primitives: bool,
+    /// Whether to include Rust prelude types (String, Vec, Option, Result, Box).
+    pub prelude: bool,
+    /// Whether to include common std library types (HashMap, HashSet, BTreeMap, BTreeSet, LinkedList, Cow, RefCell, Arc, Rc).
+    pub common_std: bool,
+}
 
-        // Primitive floating point types
-        "std::primitive::f32" | "core::primitive::f32" | "std::f32" | "core::f32" => Some("f32"),
-        "std::primitive::f64" | "core::primitive::f64" | "std::f64" | "core::f64" => Some("f64"),
+impl TypeGroups {
+    /// No type groups.
+    pub const NONE: Self = Self {
+        primitives: false,
+        prelude: false,
+        common_std: false,
+    };
 
-        // Other primitive types
-        "std::primitive::bool" | "core::primitive::bool" | "std::bool" | "core::bool" => {
-            Some("bool")
-        }
-        "std::primitive::char" | "core::primitive::char" | "std::char" | "core::char" => {
-            Some("char")
-        }
-        "std::primitive::str" | "core::primitive::str" | "std::str" | "core::str" => Some("str"),
+    /// Only Rust language primitives.
+    pub const PRIMITIVES: Self = Self {
+        primitives: true,
+        prelude: false,
+        common_std: false,
+    };
 
-        // Common std types
-        "std::string::String" => Some("String"),
-        "std::vec::Vec" => Some("Vec"),
-        "std::collections::HashMap" => Some("HashMap"),
-        "std::collections::HashSet" => Some("HashSet"),
-        "std::option::Option" => Some("Option"),
-        "std::result::Result" => Some("Result"),
+    /// Primitives and prelude types.
+    pub const PRELUDE: Self = Self {
+        primitives: true,
+        prelude: true,
+        common_std: false,
+    };
 
-        _ => None,
+    /// All type groups (primitives + prelude + common std types).
+    pub const ALL: Self = Self {
+        primitives: true,
+        prelude: true,
+        common_std: true,
+    };
+
+    /// Check if any type groups are enabled.
+    pub const fn is_empty(&self) -> bool {
+        !self.primitives && !self.prelude && !self.common_std
     }
 }
 
-/// Fallback primitive type resolution when PHF is not available
-#[cfg(not(feature = "static-resolver"))]
-fn get_primitive_mapping(path: &str) -> Option<&'static str> {
-    match path {
-        // Primitive integer types
-        "std::primitive::i8" | "core::primitive::i8" | "std::i8" | "core::i8" => Some("i8"),
-        "std::primitive::i16" | "core::primitive::i16" | "std::i16" | "core::i16" => Some("i16"),
-        "std::primitive::i32" | "core::primitive::i32" | "std::i32" | "core::i32" => Some("i32"),
-        "std::primitive::i64" | "core::primitive::i64" | "std::i64" | "core::i64" => Some("i64"),
-        "std::primitive::i128" | "core::primitive::i128" | "std::i128" | "core::i128" => {
-            Some("i128")
-        }
-        "std::primitive::isize" | "core::primitive::isize" | "std::isize" | "core::isize" => {
-            Some("isize")
-        }
-
-        // Primitive unsigned integer types
-        "std::primitive::u8" | "core::primitive::u8" | "std::u8" | "core::u8" => Some("u8"),
-        "std::primitive::u16" | "core::primitive::u16" | "std::u16" | "core::u16" => Some("u16"),
-        "std::primitive::u32" | "core::primitive::u32" | "std::u32" | "core::u32" => Some("u32"),
-        "std::primitive::u64" | "core::primitive::u64" | "std::u64" | "core::u64" => Some("u64"),
-        "std::primitive::u128" | "core::primitive::u128" | "std::u128" | "core::u128" => {
-            Some("u128")
-        }
-        "std::primitive::usize" | "core::primitive::usize" | "std::usize" | "core::usize" => {
-            Some("usize")
-        }
-
-        // Primitive floating point types
-        "std::primitive::f32" | "core::primitive::f32" | "std::f32" | "core::f32" => Some("f32"),
-        "std::primitive::f64" | "core::primitive::f64" | "std::f64" | "core::f64" => Some("f64"),
-
-        // Other primitive types
-        "std::primitive::bool" | "core::primitive::bool" | "std::bool" | "core::bool" => {
-            Some("bool")
-        }
-        "std::primitive::char" | "core::primitive::char" | "std::char" | "core::char" => {
-            Some("char")
-        }
-        "std::primitive::str" | "core::primitive::str" | "std::str" | "core::str" => Some("str"),
-
-        // Common std types
-        "std::string::String" => Some("String"),
-        "std::vec::Vec" => Some("Vec"),
-        "std::collections::HashMap" => Some("HashMap"),
-        "std::collections::HashSet" => Some("HashSet"),
-        "std::option::Option" => Some("Option"),
-        "std::result::Result" => Some("Result"),
-
-        _ => None,
+impl Default for TypeGroups {
+    fn default() -> Self {
+        Self::NONE
     }
 }
 
-const PRIMITIVE_COUNT: usize = 74;
-
-/// Type alias for dynamic path resolvers using HashMap
+/// Type alias for dynamic path resolvers using [`HashMap`] storage.
+///
+/// This resolver allows adding and removing mappings at runtime.
 pub type DynamicPathResolver = PathResolver<HashMap<String, String>>;
 
-/// Type alias for static path resolvers using PHF Map
+/// Type alias for static path resolvers using PHF [`Map`] storage.
+///
+/// This resolver uses compile-time static mappings for zero-cost lookups.
 #[cfg(feature = "static-resolver")]
 pub type StaticPathResolver<'a> = PathResolver<&'a Map<&'static str, &'static str>>;
 
-/// Type alias for const path resolvers with only primitive mappings
+/// Type alias for const path resolvers with [`EmptyStorage`].
+///
+/// These resolvers have no custom mappings, only type group mappings.
 pub type PrimitivePathResolver = PathResolver<EmptyStorage>;
 
-/// A const empty path resolver.
-pub const EMPTY_RESOLVER: PrimitivePathResolver = PathResolver::new(EmptyStorage, false);
+/// Const resolver with no mappings at all.
+///
+/// This resolver will not resolve any paths.
+pub const EMPTY_RESOLVER: PrimitivePathResolver = PathResolver::new(EmptyStorage, TypeGroups::NONE);
 
-/// A const path resolver with primitive type mappings.
-pub const PRIMITIVE_RESOLVER: PrimitivePathResolver = PathResolver::new(EmptyStorage, true);
+/// Const resolver with only primitive type mappings (i8, u32, bool, etc.).
+pub const PRIMITIVE_RESOLVER: PrimitivePathResolver =
+    PathResolver::new(EmptyStorage, TypeGroups::PRIMITIVES);
 
+/// Const resolver with primitives and prelude types (String, Vec, Option, etc.).
+pub const PRELUDE_RESOLVER: PrimitivePathResolver =
+    PathResolver::new(EmptyStorage, TypeGroups::PRELUDE);
+
+/// Const resolver with all type groups enabled.
+///
+/// This includes primitives, prelude types, and common std types.
+pub const ALL_RESOLVER: PrimitivePathResolver = PathResolver::new(EmptyStorage, TypeGroups::ALL);
+
+/// Path resolver that maps various path representations to canonical types.
+///
+/// See the module-level documentation for detailed usage examples.
 #[derive(Debug, Clone)]
 pub struct PathResolver<M> {
-    /// Maps normalized path strings to canonical type names
+    /// Maps normalized path strings to canonical type names.
     mappings: M,
-    /// Whether to use the built-in primitive mappings
-    use_primitives: bool,
+    /// Which type group mappings to include.
+    groups: TypeGroups,
 }
 
 impl<M> PathResolver<M>
 where
     M: MappingStorage,
 {
-    /// Create a new path resolver with the given mapping storage and primitive flag.
-    pub const fn new(mappings: M, use_primitives: bool) -> Self {
-        Self {
-            mappings,
-            use_primitives,
-        }
+    /// Create a new path resolver with the specified storage backend and type groups.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use desynt::{PathResolver, TypeGroups, EmptyStorage};
+    ///
+    /// const RESOLVER: PathResolver<EmptyStorage> =
+    ///     PathResolver::new(EmptyStorage, TypeGroups::PRIMITIVES);
+    /// ```
+    pub const fn new(mappings: M, groups: TypeGroups) -> Self {
+        Self { mappings, groups }
     }
 
-    /// Check if this resolver uses built-in primitive mappings.
+    /// Return the current type groups configuration.
+    pub const fn groups(&self) -> TypeGroups {
+        self.groups
+    }
+
+    /// Return `true` if any type group mappings are enabled.
+    pub const fn uses_groups(&self) -> bool {
+        !self.groups.is_empty()
+    }
+
+    /// Return `true` if primitive type mappings are enabled.
     pub const fn uses_primitives(&self) -> bool {
-        self.use_primitives
+        self.groups.primitives
     }
 
-    /// Resolve a syn Path to its canonical type name, if a mapping exists.
+    /// Return `true` if prelude type mappings are enabled.
+    pub const fn uses_prelude(&self) -> bool {
+        self.groups.prelude
+    }
+
+    /// Return `true` if common std type mappings are enabled.
+    pub const fn uses_common_std(&self) -> bool {
+        self.groups.common_std
+    }
+
+    /// Resolve a syn [`Path`] to its canonical type name.
     ///
     /// This method uses multiple resolution strategies:
-    /// 1. Try the full path as-is
-    /// 2. For generic types, try the base type with progressively shorter paths
-    /// 3. Try all possible path suffix combinations
+    /// 1. Exact path matching - Direct lookup of the full path
+    /// 2. Generic type resolution - Extracts base type from generics (e.g., `Option<T>` -> `Option`)
+    /// 3. Progressive path resolution - Tries shorter path variations for standard library types
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(&str)` with the canonical type name if a mapping exists,
+    /// otherwise returns `None`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use desynt::{DynamicPathResolver, TypeGroups};
+    /// use syn::Path;
+    ///
+    /// let resolver = DynamicPathResolver::with_all_groups();
+    /// let path: Path = syn::parse_str("std::option::Option").unwrap();
+    /// assert_eq!(resolver.resolve(&path), Some("Option"));
+    /// ```
     pub fn resolve(&self, path: &Path) -> Option<&str> {
         let stripped = path.strip_raw();
 
@@ -511,6 +617,7 @@ where
     }
 
     /// Try to resolve a path using progressive path shortening.
+    ///
     /// This handles cases like:
     /// - "std::option::Option" -> looks for "std::option::Option", "option::Option", "Option"
     /// - "string::String" -> looks for "string::String", "String"
@@ -567,10 +674,26 @@ where
     }
 
     /// Check if a path could reasonably be a shortening of a standard library path.
+    ///
     /// This is used to determine when suffix matching should be applied.
     fn could_be_stdlib_shortening(&self, segments: &[String], base_type: &str) -> bool {
-        // Only allow suffix matching for common std library types
-        let common_types = ["Option", "Vec", "HashMap", "HashSet", "Result", "String"];
+        // Only allow suffix matching for prelude types and common std library types
+        let common_types = [
+            "Option",
+            "Vec",
+            "HashMap",
+            "HashSet",
+            "Result",
+            "String",
+            "Box",
+            "BTreeMap",
+            "BTreeSet",
+            "LinkedList",
+            "Cow",
+            "RefCell",
+            "Arc",
+            "Rc",
+        ];
         if !common_types.contains(&base_type) {
             return false;
         }
@@ -585,6 +708,16 @@ where
             "collections",
             "string",
             "result",
+            "borrow",
+            "boxed",
+            "cell",
+            "sync",
+            "rc",
+            "hash_map",
+            "hash_set",
+            "btree_map",
+            "btree_set",
+            "linked_list",
         ];
 
         for segment in segments {
@@ -597,6 +730,7 @@ where
     }
 
     /// Find a mapping that ends with the given base type.
+    ///
     /// For example, if base_type is "Option", this will find "std::option::Option" -> "Option"
     /// Prefers shorter paths and standard library paths over longer/custom paths.
     fn find_mapping_ending_with(&self, base_type: &str) -> Option<&str> {
@@ -618,24 +752,24 @@ where
         }
 
         if candidates.is_empty() {
-            // No candidates found, check primitive mappings if enabled
-            if self.use_primitives {
+            // No candidates found, check built-in mappings if enabled
+            if !self.groups.is_empty() {
                 #[cfg(feature = "static-resolver")]
                 {
-                    // Check if any primitive mapping ends with this base type
-                    if get_primitive_mapping_static(base_type).is_some() {
-                        return get_primitive_mapping_static(base_type);
+                    // Check if any built-in mapping matches this base type
+                    if definitions::get_builtin_mapping_static(base_type, self.groups).is_some() {
+                        return definitions::get_builtin_mapping_static(base_type, self.groups);
                     }
-                    // For primitive mappings, check common patterns
-                    return self.check_primitive_patterns(base_type, get_primitive_mapping_static);
+                    // For built-in mappings, check common patterns
+                    return self.check_builtin_patterns(base_type);
                 }
                 #[cfg(not(feature = "static-resolver"))]
                 {
-                    if get_primitive_mapping(base_type).is_some() {
-                        return get_primitive_mapping(base_type);
+                    if definitions::get_builtin_mapping(base_type, self.groups).is_some() {
+                        return definitions::get_builtin_mapping(base_type, self.groups);
                     }
-                    // For primitive mappings, check common patterns
-                    return self.check_primitive_patterns(base_type, get_primitive_mapping);
+                    // For built-in mappings, check common patterns
+                    return self.check_builtin_patterns(base_type);
                 }
             }
             return None;
@@ -680,171 +814,151 @@ where
         sorted_candidates.first().map(|(_, result)| *result)
     }
 
-    /// Check common primitive type patterns for a base type
-    fn check_primitive_patterns<F>(&self, base_type: &str, primitive_fn: F) -> Option<&str>
-    where
-        F: Fn(&str) -> Option<&'static str>,
-    {
-        // Check common prefixes for primitive types
-        for prefix in &["std", "core"] {
-            let candidate = format!("{}::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            let candidate = format!("{}::primitive::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            // Also try common module patterns
-            let candidate = format!("{}::string::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            let candidate = format!("{}::vec::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            let candidate = format!("{}::collections::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            let candidate = format!("{}::option::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
-            }
-            let candidate = format!("{}::result::{}", prefix, base_type);
-            if let Some(result) = primitive_fn(&candidate) {
-                return Some(result);
+    /// Check common primitive type patterns for a base type.
+    fn check_builtin_patterns(&self, base_type: &str) -> Option<&str> {
+        // Check common prefixes for type groups
+        for prefix in &["std", "core", "alloc"] {
+            let patterns = [
+                format!("{}::{}", prefix, base_type),
+                format!("{}::primitive::{}", prefix, base_type),
+                format!("{}::string::{}", prefix, base_type),
+                format!("{}::vec::{}", prefix, base_type),
+                format!("{}::collections::{}", prefix, base_type),
+                format!("{}::collections::hash_map::{}", prefix, base_type),
+                format!("{}::collections::hash_set::{}", prefix, base_type),
+                format!("{}::collections::btree_map::{}", prefix, base_type),
+                format!("{}::collections::btree_set::{}", prefix, base_type),
+                format!("{}::collections::linked_list::{}", prefix, base_type),
+                format!("{}::option::{}", prefix, base_type),
+                format!("{}::result::{}", prefix, base_type),
+                format!("{}::boxed::{}", prefix, base_type),
+                format!("{}::borrow::{}", prefix, base_type),
+                format!("{}::cell::{}", prefix, base_type),
+                format!("{}::sync::{}", prefix, base_type),
+                format!("{}::rc::{}", prefix, base_type),
+            ];
+
+            for candidate in &patterns {
+                #[cfg(feature = "static-resolver")]
+                {
+                    if let Some(result) =
+                        definitions::get_builtin_mapping_static(candidate, self.groups)
+                    {
+                        return Some(result);
+                    }
+                }
+                #[cfg(not(feature = "static-resolver"))]
+                {
+                    if let Some(result) = definitions::get_builtin_mapping(candidate, self.groups) {
+                        return Some(result);
+                    }
+                }
             }
         }
         None
     }
 
-    /// Helper method to try resolving a base type against both custom and primitive mappings.
+    /// Try resolving a base type against both custom and built-in mappings.
     fn try_resolve_base_type(&self, base_type: &str) -> Option<&str> {
         // Check custom mappings
         if let Some(canonical) = self.mappings.get(base_type) {
             return Some(canonical);
         }
 
-        // Check primitive mappings if enabled
-        if self.use_primitives {
+        // Check built-in mappings if enabled
+        if !self.groups.is_empty() {
             #[cfg(feature = "static-resolver")]
-            let primitive_result = get_primitive_mapping_static(base_type);
+            let builtin_result = definitions::get_builtin_mapping_static(base_type, self.groups);
             #[cfg(not(feature = "static-resolver"))]
-            let primitive_result = get_primitive_mapping(base_type);
+            let builtin_result = definitions::get_builtin_mapping(base_type, self.groups);
 
-            return primitive_result;
+            return builtin_result;
         }
 
         None
     }
 
-    /// Get all registered canonical type names.
+    /// Return an iterator over all canonical type names known to this resolver.
+    ///
+    /// This includes both custom mappings and type group mappings (if enabled).
     pub fn canonical_types(&self) -> impl Iterator<Item = &str> {
         let custom_types: Vec<&str> = self.mappings.values().collect();
 
-        if self.use_primitives {
-            #[cfg(feature = "static-resolver")]
-            {
-                // Collect all primitive type values manually - same as non-PHF case
-                let primitive_types = vec![
+        if !self.groups.is_empty() {
+            let mut builtin_types = Vec::new();
+
+            if self.groups.primitives {
+                builtin_types.extend_from_slice(&[
                     "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128",
-                    "usize", "f32", "f64", "bool", "char", "str", "String", "Vec", "HashMap",
-                    "HashSet", "Option", "Result",
-                ];
-                let all_types: Vec<&str> =
-                    custom_types.into_iter().chain(primitive_types).collect();
-                Box::new(all_types.into_iter()) as Box<dyn Iterator<Item = &str>>
+                    "usize", "f32", "f64", "bool", "char", "str",
+                ]);
             }
-            #[cfg(not(feature = "static-resolver"))]
-            {
-                // Collect all primitive type values manually
-                let primitive_types = vec![
-                    "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128",
-                    "usize", "f32", "f64", "bool", "char", "str", "String", "Vec", "HashMap",
-                    "HashSet", "Option", "Result",
-                ];
-                let all_types: Vec<&str> =
-                    custom_types.into_iter().chain(primitive_types).collect();
-                Box::new(all_types.into_iter()) as Box<dyn Iterator<Item = &str>>
+
+            if self.groups.prelude {
+                builtin_types.extend_from_slice(&["String", "Vec", "Option", "Result", "Box"]);
             }
+
+            if self.groups.common_std {
+                builtin_types.extend_from_slice(&[
+                    "HashMap",
+                    "HashSet",
+                    "BTreeMap",
+                    "BTreeSet",
+                    "LinkedList",
+                    "Cow",
+                    "RefCell",
+                    "Arc",
+                    "Rc",
+                ]);
+            }
+
+            let all_types: Vec<&str> = custom_types.into_iter().chain(builtin_types).collect();
+            Box::new(all_types.into_iter()) as Box<dyn Iterator<Item = &str>>
         } else {
             Box::new(custom_types.into_iter()) as Box<dyn Iterator<Item = &str>>
         }
     }
 
-    /// Get all registered path patterns.
+    /// Return an iterator over all registered path patterns.
+    ///
+    /// Note: This only returns custom path patterns, not type group patterns,
+    /// as type group patterns are numerous and implementation-dependent.
     pub fn path_patterns(&self) -> impl Iterator<Item = &str> {
+        // Note: For simplicity, we only return custom patterns
+        // Built-in patterns are numerous and implementation-dependent
         let custom_patterns: Vec<&str> = self.mappings.keys().collect();
-
-        if self.use_primitives {
-            #[cfg(feature = "static-resolver")]
-            {
-                // Note: This would be quite large, so we'll simplify for consistency
-                // In practice, users without PHF likely won't need to iterate over all patterns
-                Box::new(custom_patterns.into_iter()) as Box<dyn Iterator<Item = &str>>
-            }
-            #[cfg(not(feature = "static-resolver"))]
-            {
-                // Note: This would be quite large, so we'll simplify for the fallback case
-                // In practice, users without PHF likely won't need to iterate over all patterns
-                Box::new(custom_patterns.into_iter()) as Box<dyn Iterator<Item = &str>>
-            }
-        } else {
-            Box::new(custom_patterns.into_iter()) as Box<dyn Iterator<Item = &str>>
-        }
+        Box::new(custom_patterns.into_iter()) as Box<dyn Iterator<Item = &str>>
     }
 
-    /// Check if a path has a registered mapping.
+    /// Return `true` if this resolver has a mapping for the given path.
+    ///
+    /// This checks both custom mappings and type group mappings (if enabled).
     pub fn has_mapping(&self, path: &Path) -> bool {
         let normalized = self.normalize_path(path);
         self.mappings.contains_key(&normalized)
-            || (self.use_primitives && {
+            || (!self.groups.is_empty() && {
                 #[cfg(feature = "static-resolver")]
                 {
-                    get_primitive_mapping_static(&normalized).is_some()
+                    definitions::get_builtin_mapping_static(&normalized, self.groups).is_some()
                 }
                 #[cfg(not(feature = "static-resolver"))]
                 {
-                    get_primitive_mapping(&normalized).is_some()
+                    definitions::get_builtin_mapping(&normalized, self.groups).is_some()
                 }
             })
     }
 
-    /// Get the number of registered mappings.
+    /// Return the total number of custom mappings in this resolver.
+    ///
+    /// Note: This does not include type group mappings as their count is
+    /// implementation-dependent and subject to change.
     pub fn len(&self) -> usize {
-        let custom_len = self.mappings.len();
-        if self.use_primitives {
-            custom_len + {
-                #[cfg(feature = "static-resolver")]
-                {
-                    PRIMITIVE_COUNT
-                }
-                #[cfg(not(feature = "static-resolver"))]
-                {
-                    PRIMITIVE_COUNT
-                }
-            }
-        } else {
-            custom_len
-        }
+        self.mappings.len()
     }
 
-    /// Check if the resolver is empty.
+    /// Return `true` if this resolver has no mappings.
     pub fn is_empty(&self) -> bool {
-        let custom_empty = self.mappings.is_empty();
-        custom_empty
-            && (!self.use_primitives || {
-                #[cfg(feature = "static-resolver")]
-                {
-                    PRIMITIVE_COUNT == 0
-                }
-                #[cfg(not(feature = "static-resolver"))]
-                {
-                    PRIMITIVE_COUNT == 0
-                }
-            })
+        self.mappings.is_empty() && self.groups.is_empty()
     }
 
     /// Normalize a syn Path to a string for comparison.
@@ -884,25 +998,53 @@ where
 
 // Specific implementations for DynamicPathResolver (HashMap-based)
 impl DynamicPathResolver {
-    /// Create a new dynamic path resolver that uses the built-in primitive mappings.
-    pub fn with_primitives() -> Self {
-        Self::new(HashMap::new(), true)
+    /// Create a new dynamic path resolver with all type groups enabled.
+    ///
+    /// This is equivalent to calling `new(HashMap::new(), TypeGroups::ALL)`.
+    pub fn with_all_groups() -> Self {
+        Self::new(HashMap::new(), TypeGroups::ALL)
     }
 
-    /// Create a new dynamic path resolver from a HashMap with optional primitive mappings.
-    pub fn from_map(mappings: HashMap<String, String>, use_primitives: bool) -> Self {
-        Self::new(mappings, use_primitives)
+    /// Create a new dynamic path resolver with only primitive type mappings.
+    ///
+    /// This is equivalent to calling `new(HashMap::new(), TypeGroups::PRIMITIVES)`.
+    pub fn with_primitives() -> Self {
+        Self::new(HashMap::new(), TypeGroups::PRIMITIVES)
+    }
+
+    /// Create a new dynamic path resolver with primitives and prelude types.
+    ///
+    /// This is equivalent to calling `new(HashMap::new(), TypeGroups::PRELUDE)`.
+    pub fn with_prelude() -> Self {
+        Self::new(HashMap::new(), TypeGroups::PRELUDE)
+    }
+
+    /// Create a new dynamic path resolver from an existing HashMap with specified type groups.
+    pub fn from_map(mappings: HashMap<String, String>, groups: TypeGroups) -> Self {
+        Self::new(mappings, groups)
+    }
+
+    /// Set which type groups to use for this resolver.
+    pub fn set_groups(&mut self, groups: TypeGroups) {
+        self.groups = groups;
     }
 
     /// Enable or disable the use of built-in primitive mappings.
+    ///
+    /// Deprecated: Use `set_groups` with `TypeGroups::PRIMITIVES` instead.
+    #[deprecated(since = "0.2.0", note = "Use set_groups with TypeGroups instead")]
     pub fn set_use_primitives(&mut self, use_primitives: bool) {
-        self.use_primitives = use_primitives;
+        self.groups = if use_primitives {
+            TypeGroups::ALL
+        } else {
+            TypeGroups::NONE
+        };
     }
 
-    /// Add a mapping from a path pattern to a canonical type name.
+    /// Add a custom mapping from a path pattern to a canonical type name.
     ///
-    /// The path pattern should be the normalized form (without raw prefixes
-    /// or leading colons).
+    /// The path pattern will be normalized (raw prefixes and leading `::` removed)
+    /// before being stored.
     pub fn add_mapping<S1, S2>(&mut self, path_pattern: S1, canonical_type: S2)
     where
         S1: Into<String>,
@@ -913,7 +1055,9 @@ impl DynamicPathResolver {
             .insert(normalized_pattern, canonical_type.into());
     }
 
-    /// Clear all mappings.
+    /// Remove all custom mappings from this resolver.
+    ///
+    /// Type group mappings (if enabled) are not affected.
     pub fn clear(&mut self) {
         self.mappings.clear();
     }
@@ -921,29 +1065,47 @@ impl DynamicPathResolver {
 
 impl Default for DynamicPathResolver {
     fn default() -> Self {
-        Self::new(HashMap::new(), false)
+        Self::new(HashMap::new(), TypeGroups::NONE)
     }
 }
 
-/// Convenience functions for creating common resolver types
+/// Convenience functions for creating common resolver types.
 impl PathResolver<EmptyStorage> {
-    /// Create a static path resolver with only primitive mappings.
-    pub const fn primitives_only() -> Self {
-        Self::new(EmptyStorage, true)
+    /// Create a const path resolver with all type groups enabled.
+    ///
+    /// This resolver has no custom mappings, only type group mappings.
+    pub const fn all_groups() -> Self {
+        Self::new(EmptyStorage, TypeGroups::ALL)
     }
 
-    /// Create an empty static path resolver.
+    /// Create a const path resolver with primitives and prelude types.
+    ///
+    /// This resolver has no custom mappings, only primitives and prelude type mappings.
+    pub const fn with_prelude() -> Self {
+        Self::new(EmptyStorage, TypeGroups::PRELUDE)
+    }
+
+    /// Create a const path resolver with only primitive type mappings.
+    ///
+    /// This resolver has no custom mappings, only primitive type mappings.
+    pub const fn primitives_only() -> Self {
+        Self::new(EmptyStorage, TypeGroups::PRIMITIVES)
+    }
+
+    /// Create an empty const path resolver with no mappings.
+    ///
+    /// This resolver will not resolve any paths.
     pub const fn empty() -> Self {
-        Self::new(EmptyStorage, false)
+        Self::new(EmptyStorage, TypeGroups::NONE)
     }
 }
 
-/// Example function for creating a static resolver with custom PHF mappings
+/// Create a static resolver with custom PHF mappings.
 ///
 /// # Examples
 ///
 /// ```
-/// use desynt::{create_static_resolver, PathResolver};
+/// use desynt::{TypeGroups, create_static_resolver, PathResolver};
 /// use phf::{phf_map, Map};
 ///
 /// const CUSTOM_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
@@ -952,12 +1114,12 @@ impl PathResolver<EmptyStorage> {
 /// };
 ///
 /// const RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-///     create_static_resolver(&CUSTOM_MAPPINGS, true);
+///     create_static_resolver(&CUSTOM_MAPPINGS, TypeGroups::ALL);
 /// ```
 #[cfg(feature = "static-resolver")]
 pub const fn create_static_resolver(
     custom_mappings: &'static Map<&'static str, &'static str>,
-    use_primitives: bool,
+    groups: TypeGroups,
 ) -> PathResolver<&'static Map<&'static str, &'static str>> {
-    PathResolver::new(custom_mappings, use_primitives)
+    PathResolver::new(custom_mappings, groups)
 }

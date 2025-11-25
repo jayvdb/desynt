@@ -1,5 +1,6 @@
 use desynt::{
-    DynamicPathResolver, EmptyStorage, PRIMITIVE_RESOLVER, PathResolver, create_static_resolver,
+    DynamicPathResolver, EmptyStorage, PRIMITIVE_RESOLVER, PathResolver, TypeGroups,
+    create_static_resolver,
 };
 use phf::{Map, phf_map};
 
@@ -42,9 +43,9 @@ const EMPTY_RESOLVER: PathResolver<EmptyStorage> = PathResolver::empty();
 
 // Static resolver with custom mappings - truly const!
 const FULL_STATIC_RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-    create_static_resolver(&CUSTOM_MAPPINGS, true);
+    create_static_resolver(&CUSTOM_MAPPINGS, TypeGroups::ALL);
 const CUSTOM_ONLY_RESOLVER: PathResolver<&'static Map<&'static str, &'static str>> =
-    create_static_resolver(&CUSTOM_MAPPINGS, false);
+    create_static_resolver(&CUSTOM_MAPPINGS, TypeGroups::NONE);
 
 fn main() {
     println!("=== Unified PathResolver Examples ===\n");
@@ -141,7 +142,7 @@ fn test_dynamic_resolver() {
     }
 
     // Test modification
-    resolver.set_use_primitives(false);
+    resolver.set_groups(TypeGroups::NONE);
     println!("  After disabling primitives:");
     let primitive_path: syn::Path = syn::parse_str("std::primitive::i32").unwrap();
     match resolver.resolve(&primitive_path) {

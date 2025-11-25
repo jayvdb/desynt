@@ -1,4 +1,8 @@
-use desynt::{HasRaw, StripRaw};
+#![cfg(test)]
+
+use std::collections::HashMap;
+
+use desynt::{HasRaw, PathResolver, StripRaw, TypeGroups};
 use syn::{Path, parse_str};
 
 #[test]
@@ -22,4 +26,18 @@ fn has_raw() {
 
     assert!(raw_path.has_raw());
     assert!(!normal_path.has_raw());
+}
+
+#[test]
+fn raw_identifier_in_module() {
+    // Test raw identifier in a module path
+    let path: Path = parse_str("r#custom::r#MyType").unwrap();
+
+    let mut mappings = HashMap::new();
+    mappings.insert("custom::MyType".to_string(), "CustomType".to_string());
+
+    let resolver = PathResolver::new(mappings, TypeGroups::ALL);
+
+    let result = resolver.resolve(&path);
+    assert_eq!(result, Some("CustomType"));
 }

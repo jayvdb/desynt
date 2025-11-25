@@ -1,9 +1,11 @@
+#![cfg(test)]
+
 use desynt::{HasRaw, StripRaw};
 use rstest::rstest;
 use syn::{Path, parse_str};
 
 #[test]
-fn std_primitive_types() {
+fn std_types() {
     let std_f64: Path = parse_str("::std::num::f64").unwrap();
     let stripped = std_f64.strip_raw();
 
@@ -18,7 +20,7 @@ fn std_primitive_types() {
 }
 
 #[test]
-fn core_primitive_types() {
+fn core_types() {
     let core_f64: Path = parse_str("::core::num::f64").unwrap();
     let stripped = core_f64.strip_raw();
 
@@ -108,7 +110,7 @@ fn multiple_raw_identifiers() {
 }
 
 #[test]
-fn complex_primitive_path_with_raw() {
+fn complex_path_with_raw() {
     let complex_path: Path = parse_str("::std::r#primitive::r#types::i32").unwrap();
     let stripped = complex_path.strip_raw();
 

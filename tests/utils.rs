@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use desynt::utils;
 use rstest::rstest;
 

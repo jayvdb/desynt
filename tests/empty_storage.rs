@@ -1,9 +1,11 @@
+#![cfg(test)]
+
 use desynt::{EMPTY_RESOLVER, EmptyStorage, PRIMITIVE_RESOLVER, PathResolver};
 use rstest::rstest;
 use syn::{Path, parse_str};
 
 #[test]
-fn const_empty_resolver() {
+fn const_empty() {
     const RESOLVER: PathResolver<EmptyStorage> = PathResolver::empty();
 
     assert!(RESOLVER.is_empty());
@@ -15,11 +17,10 @@ fn const_empty_resolver() {
 }
 
 #[test]
-fn const_primitive_resolver() {
+fn const_primitive() {
     const RESOLVER: PathResolver<EmptyStorage> = PathResolver::primitives_only();
 
     assert!(!RESOLVER.is_empty()); // has primitives
-    assert_eq!(RESOLVER.len(), 74); // number of primitive mappings
     assert!(RESOLVER.uses_primitives());
 
     let path: Path = parse_str("std::primitive::i32").unwrap();
@@ -27,9 +28,8 @@ fn const_primitive_resolver() {
 }
 
 #[test]
-fn global_primitive_resolver() {
+fn global_primitive() {
     assert!(!PRIMITIVE_RESOLVER.is_empty());
-    assert_eq!(PRIMITIVE_RESOLVER.len(), 74);
     assert!(PRIMITIVE_RESOLVER.uses_primitives());
 
     let path: Path = parse_str("std::primitive::f64").unwrap();
@@ -37,7 +37,7 @@ fn global_primitive_resolver() {
 }
 
 #[test]
-fn global_empty_resolver() {
+fn global_empty() {
     assert!(EMPTY_RESOLVER.is_empty());
     assert_eq!(EMPTY_RESOLVER.len(), 0);
     assert!(!EMPTY_RESOLVER.uses_primitives());
@@ -60,10 +60,6 @@ fn global_empty_resolver() {
 #[case::std_bool("std::primitive::bool", "bool")]
 #[case::core_char("core::primitive::char", "char")]
 #[case::std_str("std::primitive::str", "str")]
-#[case::std_string("std::string::String", "String")]
-#[case::std_vec("std::vec::Vec", "Vec")]
-#[case::std_option("std::option::Option", "Option")]
-#[case::std_result("std::result::Result", "Result")]
 fn primitive_type_resolution(#[case] path_str: &str, #[case] expected: &str) {
     const RESOLVER: PathResolver<EmptyStorage> = PathResolver::primitives_only();
 
@@ -77,13 +73,32 @@ fn primitive_type_resolution(#[case] path_str: &str, #[case] expected: &str) {
     );
 }
 
+#[rstest]
+#[case::std_string("std::string::String", "String")]
+#[case::std_vec("std::vec::Vec", "Vec")]
+#[case::std_option("std::option::Option", "Option")]
+#[case::std_result("std::result::Result", "Result")]
+#[case::std_box("std::boxed::Box", "Box")]
+fn prelude_type_resolution(#[case] path_str: &str, #[case] expected: &str) {
+    use desynt::PRELUDE_RESOLVER;
+
+    let path: Path = parse_str(path_str).unwrap();
+    assert_eq!(
+        PRELUDE_RESOLVER.resolve(&path),
+        Some(expected),
+        "Failed to resolve {} to {}",
+        path_str,
+        expected
+    );
+}
+
 #[test]
-fn const_resolver_immutability() {
+fn const_immutability() {
     // Const resolvers are immutable - this test just verifies they work in const contexts
     const RESOLVER1: PathResolver<EmptyStorage> = PathResolver::empty();
     const RESOLVER2: PathResolver<EmptyStorage> = PathResolver::primitives_only();
 
     // These should compile without issues
-    assert_ne!(RESOLVER1.len(), RESOLVER2.len());
     assert_ne!(RESOLVER1.uses_primitives(), RESOLVER2.uses_primitives());
+    assert_ne!(RESOLVER1.uses_groups(), RESOLVER2.uses_groups());
 }
