@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+      
+      - name: Run tests
+        run: cargo test --all-features
+      
+      - name: Run tests (no default features)
+        run: cargo test --no-default-features
+      
+      - name: Run examples
+        run: |
+          cargo run --example const_example
+          cargo run --example domain_specific
+          cargo run --example generic_demo
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+      
+      - name: Install nightly rustfmt
+        run: rustup toolchain install nightly --component rustfmt
+      
+      - name: Check formatting
+        run: cargo +nightly fmt -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: jdx/mise-action@v2
+        with:
+          install: true
+      
+      - name: Run clippy
+        run: cargo clippy --all-features -- -D warnings
