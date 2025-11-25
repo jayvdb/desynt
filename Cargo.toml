@@ -22,3 +22,11 @@ static-resolver = ["phf"]
 [[test]]
 name = "phf_storage"
 required-features = ["static-resolver"]
+
+[[example]]
+name = "const_example"
+required-features = ["static-resolver"]
+
+[[example]]
+name = "domain_specific"
+required-features = ["static-resolver"]

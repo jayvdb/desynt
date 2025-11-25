@@ -23,11 +23,15 @@ jobs:
       - name: Run tests (no default features)
         run: cargo test --no-default-features
       
-      - name: Run examples
+      - name: Run examples (all features)
         run: |
-          cargo run --example const_example
-          cargo run --example domain_specific
+          cargo run --example const_example --all-features
+          cargo run --example domain_specific --all-features
           cargo run --example generic_demo
+
+      - name: Run examples (no default features)
+        run: |
+          cargo run --example generic_demo --no-default-features
 
   fmt:
     name: Format
