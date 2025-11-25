@@ -4,7 +4,7 @@ use desynt::{
 use phf::{Map, phf_map};
 
 // Custom mappings for application-specific types using PHF
-static CUSTOM_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
+const CUSTOM_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
     // Web framework types
     "actix_web::HttpResponse" => "HttpResponse",
     "axum::response::Response" => "Response",

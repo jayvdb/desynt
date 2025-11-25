@@ -2,7 +2,7 @@ use desynt::{DynamicPathResolver, PathResolver, create_static_resolver};
 use phf::{Map, phf_map};
 
 // Domain-specific type mappings for web applications
-static WEB_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
+const WEB_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
     // HTTP and web frameworks
     "actix_web::HttpRequest" => "Request",
     "actix_web::HttpResponse" => "Response",
@@ -30,7 +30,7 @@ static WEB_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
 };
 
 // Database and persistence mappings
-static DATABASE_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
+const DATABASE_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
     // Database connections and pools
     "sqlx::Pool" => "DbPool",
     "sqlx::Connection" => "DbConnection",

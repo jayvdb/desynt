@@ -946,7 +946,7 @@ impl PathResolver<EmptyStorage> {
 /// use desynt::{create_static_resolver, PathResolver};
 /// use phf::{phf_map, Map};
 ///
-/// static CUSTOM_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
+/// const CUSTOM_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
 ///     "actix_web::HttpResponse" => "HttpResponse",
 ///     "serde_json::Value" => "JsonValue",
 /// };

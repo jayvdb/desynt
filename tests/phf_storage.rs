@@ -4,7 +4,8 @@ use rstest::rstest;
 use syn::{Path, parse_str};
 
 // Test PHF mappings
-static TEST_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
+const EMPTY_MAPPINGS: Map<&'static str, &'static str> = phf_map! {};
+const TEST_MAPPINGS: Map<&'static str, &'static str> = phf_map! {
     "custom::Type1" => "Type1",
     "custom::Type2" => "Type2",
     "another::Custom" => "AnotherCustom",
@@ -27,7 +28,6 @@ fn static_resolver_basic() {
 
 #[test]
 fn static_resolver_empty() {
-    static EMPTY_MAPPINGS: Map<&'static str, &'static str> = phf_map! {};
     const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, false);
 
     assert_eq!(RESOLVER.len(), 0);
@@ -40,7 +40,6 @@ fn static_resolver_empty() {
 
 #[test]
 fn static_resolver_with_primitives() {
-    static EMPTY_MAPPINGS: Map<&'static str, &'static str> = phf_map! {};
     const RESOLVER: StaticPathResolver = create_static_resolver(&EMPTY_MAPPINGS, true);
 
     assert_eq!(RESOLVER.len(), 74); // only primitives
