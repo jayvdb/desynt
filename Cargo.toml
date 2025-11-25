@@ -18,3 +18,7 @@ rstest = "0.18"
 [features]
 default = ["static-resolver"]
 static-resolver = ["phf"]
+
+[[test]]
+name = "phf_storage"
+required-features = ["static-resolver"]
